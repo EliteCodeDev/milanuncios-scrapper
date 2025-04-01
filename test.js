@@ -21,6 +21,7 @@
       hitOrigin: 'listing',
       recentSearchShowed: '0',
       recentSearchUsed: '0'
+      // sets
     });
 
     // Construye la URL del endpoint del servidor

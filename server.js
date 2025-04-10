@@ -16,7 +16,7 @@ app.get('/scrape', async (req, res) => {
     const data = await scrapeMilanuncios(searchParams);
 
     // Enviar la data al flujo de n8n
-    const n8nWebhookUrl = 'https://n8n.sitemaster.lat/webhook-test/leotest'; // Reemplaza con tu URL real
+    const n8nWebhookUrl = 'https://n8n.sitemaster.lat/webhook/leotest'; // Reemplaza con tu URL real
     await axios.post(n8nWebhookUrl, data, {
       headers: {
         'Content-Type': 'application/json'

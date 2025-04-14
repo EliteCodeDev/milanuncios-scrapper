@@ -1,1 +1,11 @@
 .env
+
+/node_modules
+/screenshots
+
+captcha_detection
+before_captcha
+captcha_after_attempt
+captcha_puzzle
+page_no_articles.html
+post_captcha_verify

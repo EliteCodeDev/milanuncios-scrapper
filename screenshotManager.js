@@ -2,11 +2,12 @@
 const fs = require('fs');
 const path = require('path');
 
-function initScreenshotDir(dirPath) {
-    if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath);
-    }
-    return dirPath;
+function initScreenshotDir() {
+  const screenshotDir = path.join(__dirname, 'screenshots');
+  if (!fs.existsSync(screenshotDir)) {
+    fs.mkdirSync(screenshotDir);
+  }
+  return screenshotDir;
 }
 
 async function takeScreenshot(page, dirPath, name) {

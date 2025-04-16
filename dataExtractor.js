@@ -41,7 +41,8 @@ async function extractData(page, screenshotDir) {
         if (articlesFound === 0) {
             console.log('No se encontraron artículos con selectores conocidos.');
             const html = await page.content();
-            fs.writeFileSync('page_no_articles.html', html);
+            //fs.writeFileSync('page_no_articles.html', html);
+            fs.writeFileSync(path.join(screenshotDir, 'page_no_articles.html'), html);
             await page.screenshot({ path: path.join(screenshotDir, 'no_articles_found.png') });
             return { error: 'No se encontraron artículos' };
         }

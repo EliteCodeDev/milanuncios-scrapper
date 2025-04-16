@@ -1,10 +1,13 @@
 // captchaSolver.js
 const fs = require('fs');
 const JimpLib = require('jimp');
+const path = require('path');
 const pixelmatchLib = require('pixelmatch');
 
 const Jimp = JimpLib.default || JimpLib;
 const pixelmatch = pixelmatchLib.default || pixelmatchLib;
+
+const { initScreenshotDir } = require('./utils');
 
 // Función de delay con variación para parecer más humano
 function sleep(ms) {
@@ -15,7 +18,7 @@ function sleep(ms) {
 // Detectar qué tipo de captcha está presente
 async function detectCaptchaType(page) {
   console.log("Detectando tipo de captcha...");
-  
+  const screenshotDir = initScreenshotDir();
   try {
     // Lista de posibles selectores para diferentes captchas
     const captchaSelectors = [
@@ -61,7 +64,8 @@ async function detectCaptchaType(page) {
     }
     
     // Tomar captura de pantalla para análisis manual (debug)
-    await page.screenshot({ path: 'captcha_detection.png' });
+    await page.screenshot({ path: path.join(screenshotDir, 'captcha_detection.png') });
+
     console.log("Captura de pantalla guardada como 'captcha_detection.png'");
     
     // Analizar el tipo de captcha presente
@@ -90,6 +94,7 @@ async function detectCaptchaType(page) {
 
 // Función para resolver captcha GeeTest visual (con captura de pantalla)
 async function solveGeetestVisual(page) {
+  const screenshotDir = initScreenshotDir();
   try {
     console.log("Intentando resolver GeeTest visualmente...");
     
@@ -100,7 +105,9 @@ async function solveGeetestVisual(page) {
       return false;
     }
     
-    await captchaArea.screenshot({ path: 'captcha_puzzle.png' });
+    //await captchaArea.screenshot({ path: 'captcha_puzzle.png' });
+    await captchaArea.screenshot({ path: path.join(screenshotDir, 'captcha_puzzle.png') });
+
     console.log("Captura del puzzle guardada como 'captcha_puzzle.png'");
     
     // Buscar el slider en la página y obtener sus dimensiones
@@ -294,7 +301,12 @@ async function verifyCaptchaSolved(page) {
 async function solveCaptcha(page) {
   try {
     // 1. Tomar captura inicial para referencia
-    await page.screenshot({ path: 'before_captcha.png' });
+    //await page.screenshot({ path: 'before_captcha.png' });
+    console.log("Tomando captura de pantalla inicial...");
+    const screenshotDir = initScreenshotDir();
+    console.log("Directorio de capturas inicializado:", screenshotDir);
+    await page.screenshot({ path: path.join(screenshotDir, 'before_captcha.png') });
+    
     console.log("Captura inicial guardada como 'before_captcha.png'");
     
     // 2. Detectar tipo de captcha
@@ -372,9 +384,13 @@ async function solveCaptcha(page) {
     
     return solved;
   } catch (error) {
+    const screenshotDir = initScreenshotDir();
     console.error("Error en solveCaptcha:", error.message);
     // Tomar captura de pantalla en caso de error
-    await page.screenshot({ path: 'captcha_error.png' }).catch(() => {});
+    // await page.screenshot({ path: 'captcha_error.png' }).catch(() => {});
+    await page.screenshot({ path: path.join(screenshotDir, 'captcha_error.png') }).catch(() => {});
+    console.log("Captura de error guardada como 'captcha_error.png'");
+
     return false;
   }
 }

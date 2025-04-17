@@ -148,7 +148,8 @@ async function solveGeetestVisual(page) {
     await sleep(2000);
     
     // Tomar otra captura para verificar el resultado
-    await page.screenshot({ path: 'captcha_after_attempt.png' });
+    //await page.screenshot({ path: 'captcha_after_attempt.png' });
+    await page.screenshot({ path: path.join(screenshotDir, 'captcha_after_attempt.png') });
     console.log("Captura post-intento guardada como 'captcha_after_attempt.png'");
     
     return true;
@@ -245,9 +246,11 @@ async function dragSliderHumanLike(page, sliderElement, targetOffset) {
 
 // Verificar si el captcha se resolvió correctamente
 async function verifyCaptchaSolved(page) {
+  screenshotDir = initScreenshotDir();
   try {
     // Tomar captura de pantalla post-verificación
-    await page.screenshot({ path: 'post_captcha_verify.png' });
+    //await page.screenshot({ path: 'post_captcha_verify.png' });
+    await page.screenshot({ path: path.join(screenshotDir, 'post_captcha_verify.png') });
     
     // Comprobar si el captcha ya no está visible
     const captchaGone = await page.evaluate(() => {

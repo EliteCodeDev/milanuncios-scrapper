@@ -2,12 +2,48 @@
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * Extrae el número total de anuncios mostrados en la página
+ * @param {Object} page - Instancia de página de Puppeteer
+ * @returns {Number} - Número de anuncios o -1 si no se puede determinar
+ */
+async function extractTotalCount(page) {
+    try {
+        return await page.evaluate(() => {
+            // Buscar el elemento que contiene el total de anuncios
+            const totalElement = document.querySelector('[data-botify-total-hits], .ma-ContentListingSummary-label div');
+            if (totalElement) {
+                const text = totalElement.textContent.trim();
+                const match = text.match(/(\d+(?:\.\d+)?)\s*anuncios?/i);
+                if (match && match[1]) {
+                    return parseInt(match[1].replace(/\./g, ''), 10);
+                }
+            }
+            return -1;
+        });
+    } catch (error) {
+        console.error('Error al extraer total de anuncios:', error.message);
+        return -1;
+    }
+}
+
+/**
+ * Extrae datos de los anuncios en la página actual
+ * @param {Object} page - Instancia de página de Puppeteer
+ * @param {String} screenshotDir - Directorio para capturas de pantalla
+ * @returns {Array} - Array de objetos con los datos extraídos
+ */
 async function extractData(page, screenshotDir) {
     try {
         console.log('Extrayendo información de los artículos...');
 
-        // *** CORRECCIÓN 1: Priorizar el selector específico ***
-        // Usaremos principalmente 'article.ma-AdCardV2' como en V3, pero mantenemos un fallback.
+        // Obtener el número total de anuncios mostrado en la página
+        const totalCount = await extractTotalCount(page);
+        if (totalCount > 0) {
+            console.log(`Total de anuncios mostrado en la página: ${totalCount}`);
+        }
+
+        // Priorizar el selector específico
         const primaryArticleSelector = 'article.ma-AdCardV2';
         let articleSelector = primaryArticleSelector;
 
@@ -22,7 +58,9 @@ async function extractData(page, screenshotDir) {
             const fallbackSelectors = [
                 'article[class*="AdCard"]', // Segundo más probable
                 '[class*="AdCard"]:not(nav):not(header):not(footer)', // Intentar ser más específico
-                '.list-item-card' // Otro posible contenedor
+                '.list-item-card', // Otro posible contenedor
+                'article', // Selector genérico en último caso
+                '.ma-AdList > *' // Cualquier hijo directo de la lista de anuncios
             ];
             for (const fbSelector of fallbackSelectors) {
                 const fbCount = await page.evaluate((sel) => {
@@ -41,7 +79,6 @@ async function extractData(page, screenshotDir) {
         if (articlesFound === 0) {
             console.log('No se encontraron artículos con selectores conocidos.');
             const html = await page.content();
-            //fs.writeFileSync('page_no_articles.html', html);
             fs.writeFileSync(path.join(screenshotDir, 'page_no_articles.html'), html);
             await page.screenshot({ path: path.join(screenshotDir, 'no_articles_found.png') });
             return { error: 'No se encontraron artículos' };
@@ -59,7 +96,7 @@ async function extractData(page, screenshotDir) {
 
                 articles.forEach((article, index) => {
                     try {
-                        // *** CORRECCIÓN 2: Función getText modificada (usa querySelector) ***
+                        // Función getText modificada (usa querySelector)
                         const getText = (element, selectors, fieldName = '') => {
                             if (!element) return '';
                             for (const sel of selectors) {
@@ -68,7 +105,7 @@ async function extractData(page, screenshotDir) {
                                     if (match && match.innerText) {
                                         let text = match.innerText.trim();
 
-                                        // *** CORRECCIÓN 4: Limpieza de datos específica ***
+                                        // Limpieza de datos específica
                                         if (fieldName === 'price') {
                                             // Tomar solo la primera línea y asegurar símbolo € al final
                                             text = text.split('\n')[0].replace(/€/g, '').trim();
@@ -95,44 +132,48 @@ async function extractData(page, screenshotDir) {
                             return ''; // Devuelve vacío si ningún selector funcionó
                         };
 
-                        // *** CORRECCIÓN 3: Listas de Selectores Refinadas ***
-                        // Priorizar selectores exactos de V3 si aún son válidos
+                        // Listas de Selectores Refinadas
                         const titleSelectors = [
-                            'h2.ma-AdCardV2-title',          // V3 exacto
-                            'a[class*="AdCard-title-link"]', // Otra posibilidad común
-                            'h2[class*="title"]',             // Más general pero útil
-                            '[itemprop="name"]'              // Schema.org
+                            'h2.ma-AdCardV2-title',
+                            'a[class*="AdCard-title-link"] h2', 
+                            'h2[class*="title"]',
+                            '[itemprop="name"]',
+                            'h2'
                         ];
 
                         const priceSelectors = [
-                            '.ma-AdPrice-value',             // V3 exacto
-                            '[class*="Price-value"]',        // Variante común
-                            '[itemprop="price"]',            // Schema.org
-                            '[class*="price"] strong',       // Precio destacado
-                            '[class*="AdPrice"]'             // Contenedor general precio
+                            '.ma-AdPrice-value',
+                            '[class*="Price-value"]',
+                            '[itemprop="price"]',
+                            '[class*="price"] strong',
+                            '[class*="AdPrice"]',
+                            '.ma-AdMultiplePrice'
                         ];
 
                         const locationSelectors = [
-                            '.ma-AdLocation-text',           // V3 exacto
-                            '[class*="Location-text"]',      // Variante
-                            '.ma-AdCard-location',           // Otra clase posible
-                            '[itemprop="addressLocality"]',  // Schema.org
-                            '[class*="location"] span'     // Último recurso
+                            '.ma-AdLocation-text',
+                            '[class*="Location-text"]',
+                            '.ma-AdCard-location',
+                            '[itemprop="addressLocality"]',
+                            '[class*="location"] span',
+                            'address span'
                         ];
 
                         const descriptionSelectors = [
-                            '.ma-AdCardV2-description',     // V3 exacto
-                            'p[class*="description"]',      // Párrafo de descripción
-                            '[itemprop="description"]',     // Schema.org
-                            '.ma-AdCard-description'        // Otra clase
+                            '.ma-AdCardV2-description',
+                            'p[class*="description"]',
+                            '[itemprop="description"]',
+                            '.ma-AdCard-description',
+                            'p.ma-SharedText'
                         ];
 
-                        // *** CORRECCIÓN 5: Extracción de 'details' más específica ***
+                        // Extracción de 'details' más específica
                         const details = [];
                         const detailSelectors = [
-                            '.ma-AdTag-label',                 // V3 exacto (para Kms, Año, Combustible)
-                            '[class*="pill"]',                 // A veces usan "pills"
-                            '[class*="Attribute-label"]'       // Otra estructura común
+                            '.ma-AdTag-label',
+                            '[class*="pill"]',
+                            '[class*="Attribute-label"]',
+                            '.ma-AdTagList-item span'
                         ];
                         const detailElements = article.querySelectorAll(detailSelectors.join(', ')); // Combinar selectores
 
@@ -140,7 +181,6 @@ async function extractData(page, screenshotDir) {
                         const price = getText(article, priceSelectors, 'price') || 'Precio no disponible';
                         const location = getText(article, locationSelectors, 'location') || 'Ubicación no disponible';
                         const description = getText(article, descriptionSelectors, 'description') || 'Sin descripción';
-
 
                         // Procesar los detalles encontrados
                         const addedDetails = new Set(); // Para evitar duplicados en details
@@ -162,8 +202,7 @@ async function extractData(page, screenshotDir) {
                             } catch (e) {/*ignore*/ }
                         });
 
-
-                        // *** CORRECCIÓN 6: Extracción URL / ImageUrl (Mantener lógica V5 pero asegurar contexto) ***
+                        // Extracción URL / ImageUrl
                         let url = '';
                         try {
                             // Buscar el enlace principal del artículo
@@ -208,7 +247,7 @@ async function extractData(page, screenshotDir) {
                             }
                         } catch (e) { /* Ignorar errores al obtener imagen */ }
 
-                        // Extracción ID (Mantener lógica V5, es más robusta)
+                        // Extracción ID
                         let id = '';
                         try {
                             if (article.getAttribute('data-id')) {
@@ -228,6 +267,16 @@ async function extractData(page, screenshotDir) {
                             }
                         } catch (e) { /* Ignorar */ }
 
+                        let date = '';
+                        try {
+                            // Intentar extraer la fecha o tiempo desde la publicación
+                            const timeSelectors = [
+                                '.ma-AdCardV2-time',
+                                '[class*="time"]',
+                                '[class*="date"]'
+                            ];
+                            date = getText(article, timeSelectors, 'date');
+                        } catch (e) { /* Ignorar */ }
 
                         data.push({
                             id,
@@ -235,9 +284,10 @@ async function extractData(page, screenshotDir) {
                             price,
                             location,
                             description,
-                            details, // Usar el array de detalles limpio
+                            details,
                             url,
-                            imageUrl
+                            imageUrl,
+                            date
                         });
                     } catch (itemError) {
                         console.error(`Error en ítem ${index}:`, itemError.message);
@@ -273,5 +323,6 @@ async function extractData(page, screenshotDir) {
 }
 
 module.exports = {
-    extractData
+    extractData,
+    extractTotalCount
 };

@@ -10,17 +10,17 @@ const path = require('path');
 const { sleep, getRandomUserAgent, initScreenshotDir } = require('./utils');
 const { buildUrl } = require('./urlBuilder');
 const { handleCookiesConsent } = require('./cookieHandler');
-const { exhaustiveScroll, countVisibleElements } = require('./pageScroller');
-const { extractData } = require('./dataExtractor');
+const { scrapWithPagination, getTotalListings, getMaxPages } = require('./pagination');
 const { solveCaptcha } = require('./captchaSolver');
-
-// Inicializar directorio de capturas
-const screenshotDir = initScreenshotDir();
 
 // Función principal de scraping
 async function scrapeMilanuncios(searchParams = {}) {
   const urlToScrape = buildUrl(searchParams);
   console.log(`Scraping URL: ${urlToScrape}`);
+  
+  // Inicializar directorio de capturas
+  const screenshotDir = initScreenshotDir();
+  console.log('Directorio de capturas inicializado:', screenshotDir);
   
   let browser = null;
   let maxRetries = 2; // Número de reintentos en caso de fallo
@@ -55,7 +55,7 @@ async function scrapeMilanuncios(searchParams = {}) {
       console.log('Lanzando navegador...');
       browser = await puppeteer.launch(launchOptions);
       
-      // Crear página directamente
+      // Crear página
       const page = await browser.newPage();
       
       // Configurar tiempos de espera más altos
@@ -119,58 +119,58 @@ async function scrapeMilanuncios(searchParams = {}) {
       
       console.log('Página cargada.');
       
-      // Manejar cookies
+      // Manejar diálogo de cookies si aparece
       await handleCookiesConsent(page);
       
       // Esperar un tiempo antes de continuar
       await sleep(2000);
       
-      // Verificar si hay captcha
-      console.log('Comprobando si hay captcha...');
+      // Verificar si hay captcha inicial
+      console.log('Comprobando si hay captcha inicial...');
+      
+      // Tomar captura para verificación visual
+      await page.screenshot({ path: path.join(screenshotDir, 'initial_page.png') });
       
       // Intentar resolver captcha si existe
       const captchaResolved = await solveCaptcha(page);
       
       if (captchaResolved) {
-        console.log('Captcha resuelto correctamente.');
+        console.log('Captcha inicial resuelto correctamente.');
       } else {
-        console.log('No se encontró captcha o no se pudo resolver.');
+        console.log('No se encontró captcha inicial o no se pudo resolver.');
       }
       
       // Esperar un poco más después del captcha
       await sleep(2000);
       
-      // Contar elementos antes del scroll
-      console.log('Contando elementos antes del scroll:');
-      const initialCount = await countVisibleElements(page);
+      // Obtener y mostrar información importante antes de comenzar el scraping
+      const totalListings = await getTotalListings(page, screenshotDir);
+      const maxPages = await getMaxPages(page);
       
-      // Realizar auto-scroll exhaustivo para cargar TODOS los elementos
-      await exhaustiveScroll(page);
+      console.log('\n===== INFORMACIÓN DE LA CONSULTA =====');
+      console.log(`- Total de anuncios: ${totalListings}`);
+      console.log(`- Número total de páginas: ${maxPages > 0 ? maxPages : 'No determinado'}`);
       
-      // Contar elementos después del scroll
-      console.log('Contando elementos después del scroll:');
-      const finalCount = await countVisibleElements(page);
+      if (maxPages > 0) {
+        console.log(`- Anuncios estimados por página: ~${Math.ceil(totalListings / maxPages)}`);
+      }
+      console.log('=====================================\n');
       
-      console.log(`Incremento de elementos: ${finalCount - initialCount} (${initialCount} -> ${finalCount})`);
+      // Realizar scraping con paginación completa
+      console.log('Iniciando scraping con paginación...');
+      const scrapedData = await scrapWithPagination(page, screenshotDir);
       
-      // Esperar un poco después del auto-scroll
-      await sleep(3000);
-      
-      // Extraer los datos de manera exhaustiva
-      const scrapedData = await extractData(page, screenshotDir);
-      
-      // Verificar si hubo error en la extracción
-      if (scrapedData && scrapedData.error) {
-        console.log(`Error en la extracción: ${scrapedData.error}`);
+      // Verificar si hubo error o si no hay datos
+      if (!scrapedData || scrapedData.length === 0) {
+        console.log('No se obtuvieron datos en el scraping con paginación');
         
-        // Si estamos en el último intento, devolver lo que tengamos
+        // Si estamos en el último intento, devolver error
         if (attempt === maxRetries) {
-          console.log('Se alcanzó el número máximo de intentos.');
+          console.log('Se alcanzó el número máximo de intentos sin éxito.');
           await browser.close();
           browser = null;
           return { 
-            error: scrapedData.error, 
-            message: 'No se pudieron extraer datos después de múltiples intentos',
+            error: 'No se pudieron extraer datos después de múltiples intentos',
             partial: true
           };
         }
@@ -183,15 +183,32 @@ async function scrapeMilanuncios(searchParams = {}) {
       }
       
       // Si llegamos aquí, la extracción fue exitosa
-      console.log(`Extracción completada. Se extrajeron ${Array.isArray(scrapedData) ? scrapedData.length : 0} artículos.`);
+      console.log(`\n===== RESUMEN FINAL DE SCRAPING =====`);
+      console.log(`- Total de anuncios indicados en la página: ${totalListings}`);
+      console.log(`- Total de anuncios extraídos: ${scrapedData.length}`);
+      if (totalListings > 0) {
+        const porcentaje = ((scrapedData.length / totalListings) * 100).toFixed(2);
+        console.log(`- Porcentaje de cobertura: ${porcentaje}%`);
+      }
+      console.log(`- Número total de páginas: ${maxPages > 0 ? maxPages : 'No determinado'}`);
+      console.log('=====================================\n');
       
       // Cerrar navegador y devolver datos
       await browser.close();
       browser = null;
-      return Array.isArray(scrapedData) ? scrapedData : [];
+      return scrapedData;
       
     } catch (error) {
       console.error(`Error en scraping (intento ${attempt + 1}/${maxRetries + 1}):`, error.message);
+      
+      // Tomar captura de error
+      try {
+        if (page) {
+          await page.screenshot({ path: path.join(screenshotDir, `error_attempt_${attempt}.png`) });
+        }
+      } catch (ssError) {
+        console.error('Error al tomar captura del error:', ssError.message);
+      }
       
       // Cerrar el navegador si sigue abierto
       if (browser) {
